@@ -1,0 +1,138 @@
+דילוג לתוכן הראשי
+Google Classroom
+Classroom
+תשפו - סייבר תכנון ותכנות מערכות - הדסים
+כיתת להקלאסרום לשנת יב בתכנון ותכנות מערכות הרחבה בסייבר
+דף הבית
+יומן
+הקורסים שנרשמתי אליהם
+רשימת משימות
+פ
+פיזיקה יב תשפו
+ת
+תשפו - סייבר תכנון ותכנות מערכות - הדסים
+כיתת להקלאסרום לשנת יב בתכנון ותכנות מערכות הרחבה בסייבר
+פ
+פיזיקה יא תשפה
+ר
+רשתות נתונים - תשפ"ה
+י
+יסודות2023
+מדעי מחשב 89222
+כיתות שהועברו לארכיון
+הגדרות
+משימת מקבול, גיבוב ו- brute force
+משימת מקבול, גיבוב ו- brute force‏
+אליהו גולדשטיין
+•
+24 בספט׳
+100 נקודות
+7.תרגיל_חישוב_מבוזר.docx‏
+Microsoft Word‏
+
+תגובות בכיתה
+העבודה שלך
+הוגשה
+client.py‏
+Text‏
+
+protocol.py‏
+Text‏
+
+server.py‏
+Text‏
+
+תגובה פרטית אחת
+
+אליהו גולדשטיין • 27 באוק׳
+הקוד נראה טוב ומעניין.
+רואה שזיהית אזור קריטי והגנת עליו בשרת.
+עבודה יפה
+הוספת תגובה פרטית…
+
+# client.py
+import multiprocessing
+import hashlib
+import threading
+import socket
+import protocol
+
+CHUNK_PER_CORE = 10_000_000
+TARGET = "EC9C0F7EDCC18A98B1F31853B1813301".lower()
+
+class ThreadHandler:
+    def __init__(self, start, end, stop_event, found_holder):
+        self.start = start
+        self.end = end
+        self.stop_event = stop_event
+        self.found_holder = found_holder  # dict עם מפתח 'value'
+
+    def searcher(self):
+        # מחרוזת חייבת להיות באורך 10 ספרות עם אפסים מובילים
+        for i in range(self.start, self.end):
+            if self.stop_event.is_set():
+                return
+            s = str(i).zfill(10)
+            if hashlib.md5(s.encode()).hexdigest() == TARGET:
+                self.found_holder["value"] = s
+                self.stop_event.set()
+                return
+
+class Client:
+    def __init__(self, ip, port):
+        self.ip = ip
+        self.port = port
+        self.my_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.my_socket.connect((self.ip, self.port))
+        self.pro = protocol.Protocol(self.my_socket)
+        self.cpu_count = multiprocessing.cpu_count()
+
+    def _request_start(self):
+        self.my_socket.sendall(self.pro.create_msg(str(self.cpu_count)))
+        msg = self.pro.get_msg()
+        if msg is None:
+            return None
+        start_txt = msg.decode(errors="ignore")
+        return int(start_txt)
+
+    def do_loop(self):
+        while True:
+            start_range = self._request_start()
+            if start_range is None:
+                print("Server closed.")
+                break
+            if start_range == -1:
+                print("STOP received.")
+                break
+
+            print(f"start range = {start_range}")
+            stop_event = threading.Event()
+            found = {"value": None}
+            threads = []
+
+            # מפצלים לתת-טווחים, core לכל thread
+            for i in range(self.cpu_count):
+                t_start = start_range + i * CHUNK_PER_CORE
+                t_end   = start_range + (i + 1) * CHUNK_PER_CORE
+                t = threading.Thread(target=ThreadHandler(t_start, t_end, stop_event, found).searcher,
+                                     name=f"thread-{i}")
+                threads.append(t)
+                t.start()
+
+            # מחכים לכל ה-threads
+            for t in threads:
+                t.join()
+
+            if found["value"] is not None:
+                print("FOUND:", found["value"])
+                # מודיעים לשרת ומסיימים
+                self.my_socket.sendall(self.pro.create_msg(f"FOUND:{found['value']}"))
+                break
+            else:
+                # לא מצאנו — מבקשים בלוק חדש בלולאה
+                continue
+
+if __name__ == "__main__":
+    Client("127.0.0.1", protocol.Protocol.PORT).do_loop()
+client.py
+המערכת מציגה את client.py.
