@@ -1,0 +1,141 @@
+דילוג לתוכן הראשי
+Google Classroom
+Classroom
+תשפו - סייבר תכנון ותכנות מערכות - הדסים
+כיתת להקלאסרום לשנת יב בתכנון ותכנות מערכות הרחבה בסייבר
+דף הבית
+יומן
+הקורסים שנרשמתי אליהם
+רשימת משימות
+פ
+פיזיקה יב תשפו
+ת
+תשפו - סייבר תכנון ותכנות מערכות - הדסים
+כיתת להקלאסרום לשנת יב בתכנון ותכנות מערכות הרחבה בסייבר
+פ
+פיזיקה יא תשפה
+ר
+רשתות נתונים - תשפ"ה
+י
+יסודות2023
+מדעי מחשב 89222
+כיתות שהועברו לארכיון
+הגדרות
+משימת מקבול, גיבוב ו- brute force
+משימת מקבול, גיבוב ו- brute force‏
+אליהו גולדשטיין
+•
+24 בספט׳
+100 נקודות
+7.תרגיל_חישוב_מבוזר.docx‏
+Microsoft Word‏
+
+תגובות בכיתה
+העבודה שלך
+הוגשה
+client.py‏
+Text‏
+
+protocol.py‏
+Text‏
+
+server.py‏
+Text‏
+
+תגובה פרטית אחת
+
+אליהו גולדשטיין • 27 באוק׳
+הקוד נראה טוב ומעניין.
+רואה שזיהית אזור קריטי והגנת עליו בשרת.
+עבודה יפה
+הוספת תגובה פרטית…
+
+# server.py
+import socket, threading
+import protocol as proto_mod
+
+CHUNK_PER_CORE = 10_000_000
+
+class Server:
+    def __init__(self, port):
+        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.server_socket.bind(("0.0.0.0", port))
+        self.server_socket.listen()
+        self.count_range = 0
+        self.cr_lock = threading.Lock()
+        self.clients = []
+        self.clients_lock = threading.Lock()
+        self.found_event = threading.Event()
+        self.found_value = None
+
+    def _broadcast_stop(self):
+        with self.clients_lock:
+            dead = []
+            for s in self.clients:
+                try:
+                    s.sendall(proto_mod.Protocol(s).create_msg("-1"))  # -1 == STOP
+                except:
+                    dead.append(s)
+            for s in dead:
+                try: self.clients.remove(s)
+                except: pass
+
+    def _handle_client(self, client_socket):
+        pro = proto_mod.Protocol(client_socket)
+        with self.clients_lock:
+            self.clients.append(client_socket)
+        try:
+            while not self.found_event.is_set():
+                msg = pro.get_msg()
+                if msg is None:
+                    break
+                txt = msg.decode(errors="ignore")
+
+                # אם לקוח מצא
+                if txt.startswith("FOUND:"):
+                    self.found_value = txt.split("FOUND:",1)[1]
+                    self.found_event.set()
+                    self._broadcast_stop()
+                    break
+
+                # אחרת: txt הוא מספר ליבות
+                try:
+                    cores = int(txt)
+                except:
+                    continue
+
+                if self.found_event.is_set():
+                    client_socket.sendall(pro.create_msg("-1"))
+                    break
+
+                # חלק טווח
+                with self.cr_lock:
+                    start = self.count_range
+                    self.count_range += cores * CHUNK_PER_CORE
+
+                client_socket.sendall(pro.create_msg(str(start)))
+        finally:
+            try: client_socket.close()
+            except: pass
+            with self.clients_lock:
+                if client_socket in self.clients:
+                    self.clients.remove(client_socket)
+
+    def do_loop(self):
+        print("Server is up and running")
+        while not self.found_event.is_set():
+            try:
+                client_socket, _ = self.server_socket.accept()
+                t = threading.Thread(target=self._handle_client, args=(client_socket,), daemon=True)
+                t.start()
+            except KeyboardInterrupt:
+                break
+        # אם נמצא ערך, נשמור את השרת פתוח עוד רגע קטן כדי לשלוח STOP
+        try: self.server_socket.close()
+        except: pass
+
+if __name__ == "__main__":
+    Server(proto_mod.Protocol.PORT).do_loop()
+server.py
+המערכת מציגה את server.py.
