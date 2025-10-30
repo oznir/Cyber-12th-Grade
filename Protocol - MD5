@@ -1,0 +1,48 @@
+# protocol.py
+class Protocol:
+    PORT = 8820
+
+    def __init__(self, sock):
+        self.sock = sock
+
+    def create_msg(self, data):
+        size = str(len(data))
+        length_size = hex(len(size))[2:]
+        if isinstance(data, str):
+            payload = data.encode()
+        else:
+            payload = data
+        return length_size.encode() + size.encode() + payload
+
+    def _recvn(self, n: int) -> bytes:
+        buf = b""
+        while len(buf) < n:
+            chunk = self.sock.recv(n - len(buf))
+            if not chunk:
+                return b""
+            buf += chunk
+        return buf
+
+    def get_msg(self):
+        # קרא את גודל שדה האורך (תו אחד בבסיס 16)
+        ls = self.sock.recv(1)
+        if not ls:
+            return None
+        try:
+            length_size = int(ls.decode(), 16)
+        except Exception:
+            return None
+
+        size_bytes = self._recvn(length_size)
+        if not size_bytes:
+            return None
+        size_str = size_bytes.decode()
+
+        if not size_str.isnumeric():
+            return None
+
+        total = int(size_str)
+        data = self._recvn(total)
+        if not data or len(data) != total:
+            return None
+        return data  # מחזיר bytes; בצד הקורא אפשר לעשות .decode() או int(...)
